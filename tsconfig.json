@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@raycast/api/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "module": "ES2022",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src/**/*", "env.d.ts"]
+}
