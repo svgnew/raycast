@@ -1,11 +1,14 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "svg-new",
-  "title": "svg.new",
+  "title": "SVG.new",
   "description": "Convert raster images (PNG, JPG, WebP) to clean SVG vectors using AI-powered tracing",
   "icon": "extension-icon.png",
   "author": "svgnew",
-  "categories": ["Design Tools", "Productivity"],
+  "categories": [
+    "Design Tools",
+    "Productivity"
+  ],
   "license": "MIT",
   "commands": [
     {
@@ -40,7 +43,7 @@
     "@raycast/eslint-config": "^1.0.11",
     "@types/node": "22.13.14",
     "@types/react": "19.0.12",
-    "eslint": "^9.23.0",
+    "eslint": "^8.57.1",
     "prettier": "^3.5.3",
     "typescript": "^5.8.2"
   },
