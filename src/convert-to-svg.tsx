@@ -102,7 +102,7 @@ function formatStage(stage: string): string {
 }
 
 export default async function Command() {
-  const { apiKey } = getPreferenceValues<Preferences.ConvertToSvg>();
+  const { apiKey } = getPreferenceValues<{ apiKey: string }>();
 
   try {
     const items = await getSelectedFinderItems();

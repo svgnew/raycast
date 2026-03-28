@@ -111,7 +111,7 @@ function fileUrlToPath(fileUrl: string): string {
 }
 
 export default async function Command() {
-  const { apiKey } = getPreferenceValues<Preferences.ConvertClipboardToSvg>();
+  const { apiKey } = getPreferenceValues<{ apiKey: string }>();
 
   try {
     const clipboard = await Clipboard.read();
