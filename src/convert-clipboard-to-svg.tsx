@@ -9,10 +9,6 @@ import {
 import fs from "fs";
 import path from "path";
 
-interface Preferences {
-  apiKey: string;
-}
-
 interface ProgressEvent {
   stage: string;
   percent: number;
@@ -20,11 +16,31 @@ interface ProgressEvent {
   totalSteps?: number;
 }
 
+interface VectorizeResult {
+  svg: string;
+  id?: string;
+}
+
+interface ApiError {
+  error?: string;
+}
+
+const VALID_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".avif", ".tiff"];
+
+const MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".tiff": "image/tiff",
+};
+
 async function vectorize(
   imageBase64: string,
   apiKey: string,
   onProgress?: (progress: ProgressEvent) => void,
-): Promise<{ svg: string; id?: string }> {
+): Promise<VectorizeResult> {
   const response = await fetch("https://svg.new/api/agent/vectorize", {
     method: "POST",
     headers: {
@@ -36,18 +52,17 @@ async function vectorize(
   });
 
   if (!response.ok) {
-    const err = await response.json();
+    const err = (await response.json()) as ApiError;
     throw new Error(err.error || `API error: ${response.status}`);
   }
 
   const contentType = response.headers.get("content-type") || "";
 
-  // SSE stream response
   if (contentType.includes("text/event-stream") && response.body) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: { svg: string; id?: string } | null = null;
+    let result: VectorizeResult | null = null;
 
     for (;;) {
       const { done, value } = await reader.read();
@@ -79,17 +94,24 @@ async function vectorize(
     return result;
   }
 
-  // Fallback: regular JSON response
-  const data = await response.json();
-  return { svg: data.svg, id: data.id };
+  const data = (await response.json()) as VectorizeResult;
+  return data;
 }
 
 function formatStage(stage: string): string {
   return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
+function fileUrlToPath(fileUrl: string): string {
+  try {
+    return decodeURIComponent(new URL(fileUrl).pathname);
+  } catch {
+    return fileUrl.replace("file://", "");
+  }
+}
+
 export default async function Command() {
-  const { apiKey } = getPreferenceValues<Preferences>();
+  const { apiKey } = getPreferenceValues<Preferences.ConvertClipboardToSvg>();
 
   try {
     const clipboard = await Clipboard.read();
@@ -103,23 +125,25 @@ export default async function Command() {
       return;
     }
 
+    const filePath = fileUrlToPath(clipboard.file);
+    const ext = path.extname(filePath).toLowerCase();
+
+    if (!VALID_EXTS.includes(ext)) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Unsupported image format",
+        message: `Supported: ${VALID_EXTS.join(", ")}`,
+      });
+      return;
+    }
+
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: "Reading clipboard image...",
     });
 
-    const filePath = clipboard.file.replace("file://", "");
     const buffer = fs.readFileSync(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".webp": "image/webp",
-      ".avif": "image/avif",
-      ".tiff": "image/png",
-    };
-    const mime = mimeMap[ext] || "image/png";
+    const mime = MIME_MAP[ext] || "image/png";
     const base64 = `data:${mime};base64,${buffer.toString("base64")}`;
 
     const { svg } = await vectorize(base64, apiKey, (progress) => {

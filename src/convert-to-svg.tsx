@@ -9,10 +9,6 @@ import {
 import fs from "fs";
 import path from "path";
 
-interface Preferences {
-  apiKey: string;
-}
-
 interface ProgressEvent {
   stage: string;
   percent: number;
@@ -20,11 +16,30 @@ interface ProgressEvent {
   totalSteps?: number;
 }
 
+interface VectorizeResult {
+  svg: string;
+  id?: string;
+}
+
+interface ApiError {
+  error?: string;
+}
+
+const VALID_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".avif"];
+
+const MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+};
+
 async function vectorize(
   imageBase64: string,
   apiKey: string,
   onProgress?: (progress: ProgressEvent) => void,
-): Promise<{ svg: string; id?: string }> {
+): Promise<VectorizeResult> {
   const response = await fetch("https://svg.new/api/agent/vectorize", {
     method: "POST",
     headers: {
@@ -36,18 +51,17 @@ async function vectorize(
   });
 
   if (!response.ok) {
-    const err = await response.json();
+    const err = (await response.json()) as ApiError;
     throw new Error(err.error || `API error: ${response.status}`);
   }
 
   const contentType = response.headers.get("content-type") || "";
 
-  // SSE stream response
   if (contentType.includes("text/event-stream") && response.body) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: { svg: string; id?: string } | null = null;
+    let result: VectorizeResult | null = null;
 
     for (;;) {
       const { done, value } = await reader.read();
@@ -79,9 +93,8 @@ async function vectorize(
     return result;
   }
 
-  // Fallback: regular JSON response
-  const data = await response.json();
-  return { svg: data.svg, id: data.id };
+  const data = (await response.json()) as VectorizeResult;
+  return data;
 }
 
 function formatStage(stage: string): string {
@@ -89,7 +102,7 @@ function formatStage(stage: string): string {
 }
 
 export default async function Command() {
-  const { apiKey } = getPreferenceValues<Preferences>();
+  const { apiKey } = getPreferenceValues<Preferences.ConvertToSvg>();
 
   try {
     const items = await getSelectedFinderItems();
@@ -104,13 +117,12 @@ export default async function Command() {
 
     const filePath = items[0].path;
     const ext = path.extname(filePath).toLowerCase();
-    const validExts = [".png", ".jpg", ".jpeg", ".webp", ".avif"];
 
-    if (!validExts.includes(ext)) {
+    if (!VALID_EXTS.includes(ext)) {
       await showToast({
         style: Toast.Style.Failure,
         title: "Invalid file type",
-        message: `Supported: ${validExts.join(", ")}`,
+        message: `Supported: ${VALID_EXTS.join(", ")}`,
       });
       return;
     }
@@ -122,14 +134,7 @@ export default async function Command() {
     });
 
     const buffer = fs.readFileSync(filePath);
-    const mimeMap: Record<string, string> = {
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".webp": "image/webp",
-      ".avif": "image/avif",
-    };
-    const mime = mimeMap[ext] || "image/png";
+    const mime = MIME_MAP[ext] || "image/png";
     const base64 = `data:${mime};base64,${buffer.toString("base64")}`;
 
     const { svg } = await vectorize(base64, apiKey, (progress) => {
