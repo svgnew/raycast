@@ -1,4 +1,11 @@
-import { showToast, Toast, Clipboard, showHUD, open, getPreferenceValues, environment } from "@raycast/api";
+import {
+  showToast,
+  Toast,
+  Clipboard,
+  showHUD,
+  open,
+  getPreferenceValues,
+} from "@raycast/api";
 import fs from "fs";
 import path from "path";
 
@@ -6,12 +13,24 @@ interface Preferences {
   apiKey: string;
 }
 
-async function vectorize(imageBase64: string, apiKey: string): Promise<string> {
+interface ProgressEvent {
+  stage: string;
+  percent: number;
+  step?: number;
+  totalSteps?: number;
+}
+
+async function vectorize(
+  imageBase64: string,
+  apiKey: string,
+  onProgress?: (progress: ProgressEvent) => void,
+): Promise<{ svg: string; id?: string }> {
   const response = await fetch("https://svg.new/api/agent/vectorize", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
+      Accept: "text/event-stream",
     },
     body: JSON.stringify({ image: imageBase64 }),
   });
@@ -21,8 +40,52 @@ async function vectorize(imageBase64: string, apiKey: string): Promise<string> {
     throw new Error(err.error || `API error: ${response.status}`);
   }
 
+  const contentType = response.headers.get("content-type") || "";
+
+  // SSE stream response
+  if (contentType.includes("text/event-stream") && response.body) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: { svg: string; id?: string } | null = null;
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      let eventType = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          const data = JSON.parse(line.slice(6));
+          if (eventType === "progress" && onProgress) {
+            onProgress(data as ProgressEvent);
+          } else if (eventType === "result") {
+            result = { svg: data.svg, id: data.id };
+          } else if (eventType === "error") {
+            throw new Error(data.message || "Vectorization failed");
+          }
+          eventType = "";
+        }
+      }
+    }
+
+    if (!result) throw new Error("No result received from stream");
+    return result;
+  }
+
+  // Fallback: regular JSON response
   const data = await response.json();
-  return data.svg;
+  return { svg: data.svg, id: data.id };
+}
+
+function formatStage(stage: string): string {
+  return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
 export default async function Command() {
@@ -32,29 +95,56 @@ export default async function Command() {
     const clipboard = await Clipboard.read();
 
     if (!clipboard.file) {
-      await showToast({ style: Toast.Style.Failure, title: "No image in clipboard", message: "Copy an image first" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "No image in clipboard",
+        message: "Copy an image first",
+      });
       return;
     }
 
-    await showToast({ style: Toast.Style.Animated, title: "Converting clipboard image to SVG..." });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Reading clipboard image...",
+    });
 
     const filePath = clipboard.file.replace("file://", "");
     const buffer = fs.readFileSync(filePath);
     const ext = path.extname(filePath).toLowerCase();
-    const mimeMap: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif", ".tiff": "image/png" };
+    const mimeMap: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+      ".avif": "image/avif",
+      ".tiff": "image/png",
+    };
     const mime = mimeMap[ext] || "image/png";
     const base64 = `data:${mime};base64,${buffer.toString("base64")}`;
 
-    const svg = await vectorize(base64, apiKey);
+    const { svg } = await vectorize(base64, apiKey, (progress) => {
+      toast.title = `${formatStage(progress.stage)}...`;
+      toast.message = `${progress.percent}%`;
+    });
 
+    toast.title = "Saving SVG...";
     const outputDir = path.join(process.env.HOME || "/tmp", "Downloads");
     const outputPath = path.join(outputDir, `vectorized-${Date.now()}.svg`);
     fs.writeFileSync(outputPath, svg);
 
     await Clipboard.copy(svg);
+
+    toast.style = Toast.Style.Success;
+    toast.title = "Done";
+    toast.message = "SVG saved to Downloads and copied to clipboard";
+
     await showHUD(`✓ SVG saved to Downloads and copied to clipboard`);
     await open(outputPath);
-  } catch (error: any) {
-    await showToast({ style: Toast.Style.Failure, title: "Conversion failed", message: error.message });
+  } catch (error: unknown) {
+    await showToast({
+      style: Toast.Style.Failure,
+      title: "Conversion failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 }
