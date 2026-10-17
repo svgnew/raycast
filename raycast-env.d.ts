@@ -8,7 +8,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** API Key - Your svg.new API key from svg.new/account */
+  /** API Key - Your SVG.new API key from svg.new/account */
   "apiKey": string
 }
 
@@ -20,6 +20,8 @@ declare namespace Preferences {
   export type ConvertToSvg = ExtensionPreferences & {}
   /** Preferences accessible in the `convert-clipboard-to-svg` command */
   export type ConvertClipboardToSvg = ExtensionPreferences & {}
+  /** Preferences accessible in the `remove-background` command */
+  export type RemoveBackground = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -27,5 +29,7 @@ declare namespace Arguments {
   export type ConvertToSvg = {}
   /** Arguments passed to the `convert-clipboard-to-svg` command */
   export type ConvertClipboardToSvg = {}
+  /** Arguments passed to the `remove-background` command */
+  export type RemoveBackground = {}
 }
 
