@@ -23,8 +23,12 @@ export const SUPPORTED_EXTENSIONS = [...Object.keys(SENT_AS_IS), ...CONVERTED];
 /** The API takes images inline, and its request bodies are capped at 4.5 MB (3 MB before base64). */
 export const MAX_IMAGE_BYTES = 3_000_000;
 
-/** Longest side, in pixels, that larger images are scaled down to. */
+/** Longest side, in pixels, that larger images are scaled down to first. */
 const MAX_SIDE = 2560;
+
+/** Each further try shrinks the image to this share of the previous size, down to MIN_SIDE. */
+const SHRINK = 0.7;
+const MIN_SIDE = 512;
 
 /** A problem with the user's input, shown as the toast title. */
 export class InputError extends Error {
@@ -71,20 +75,33 @@ export async function readImageAsDataUrl(filePath: string): Promise<string> {
   return `data:${mime};base64,${bytes.toString("base64")}`;
 }
 
-/** Scales an image down to fit the upload limit: PNG when it has transparency, JPEG otherwise. */
+/**
+ * Scales an image down until it fits the upload limit, or reaches MIN_SIDE: PNG when it has
+ * transparency, JPEG otherwise. Returns the last try, which the caller rejects if it's still too big.
+ */
 async function scaleDown(filePath: string): Promise<{ bytes: Buffer; mime: string }> {
   const { stdout } = await execFileAsync(SIPS, ["-g", "pixelWidth", "-g", "pixelHeight", "-g", "hasAlpha", filePath]);
   const width = Number(/pixelWidth: (\d+)/.exec(stdout)?.[1] ?? 0);
   const height = Number(/pixelHeight: (\d+)/.exec(stdout)?.[1] ?? 0);
   const hasAlpha = /hasAlpha: yes/.test(stdout);
   const longest = Math.max(width, height);
-  const side = longest > MAX_SIDE ? MAX_SIDE : Math.round(longest * 0.7);
+  let side = longest > MAX_SIDE ? MAX_SIDE : Math.round(longest * SHRINK);
 
-  if (hasAlpha) {
-    return { bytes: await sips(filePath, ["-s", "format", "png", "-Z", String(side)], ".png"), mime: "image/png" };
+  for (;;) {
+    const result = hasAlpha
+      ? { bytes: await sips(filePath, ["-s", "format", "png", "-Z", String(side)], ".png"), mime: "image/png" }
+      : {
+          bytes: await sips(
+            filePath,
+            ["-s", "format", "jpeg", "-s", "formatOptions", "90", "-Z", String(side)],
+            ".jpg",
+          ),
+          mime: "image/jpeg",
+        };
+    const next = Math.round(side * SHRINK);
+    if (result.bytes.length <= MAX_IMAGE_BYTES || next < MIN_SIDE) return result;
+    side = next;
   }
-  const args = ["-s", "format", "jpeg", "-s", "formatOptions", "90", "-Z", String(side)];
-  return { bytes: await sips(filePath, args, ".jpg"), mime: "image/jpeg" };
 }
 
 /** Runs sips on a copy of the image and returns the output file's bytes. */

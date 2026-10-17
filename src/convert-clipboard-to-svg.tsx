@@ -4,7 +4,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { availablePaths, creditsNote, showError, showProgress } from "./lib/command";
+import { creditsNote, saveNewFiles, showError, showProgress } from "./lib/command";
 import { InputError, isSupportedImage, readImageAsDataUrl, unsupportedImageError } from "./lib/image";
 import { svgText, vectorize } from "./lib/svgnew";
 
@@ -68,8 +68,7 @@ export default async function Command() {
     toast.message = undefined;
     const svg = await svgText(result);
     const downloads = path.join(os.homedir(), "Downloads");
-    const [outputPath] = availablePaths(downloads, clipboard.name, [".svg"]);
-    await fs.writeFile(outputPath, svg);
+    const [outputPath] = await saveNewFiles(downloads, clipboard.name, [{ ext: ".svg", data: svg }]);
     await Clipboard.copy(svg);
 
     await showHUD(
