@@ -1,7 +1,6 @@
 import { open, showHUD, showToast, Toast } from "@raycast/api";
-import { promises as fs } from "fs";
 import path from "path";
-import { availablePaths, selectedImagePath, showError, showProgress } from "./lib/command";
+import { saveNewFiles, selectedImagePath, showError, showProgress } from "./lib/command";
 import { readImageAsDataUrl } from "./lib/image";
 import { download, removeBackground, svgText, vectorize } from "./lib/svgnew";
 
@@ -29,9 +28,10 @@ export default async function Command() {
     const png = result.png ?? (await download(result.pngUrl as string));
     const svg = await svgText(result);
     const name = `${path.parse(filePath).name}-no-bg`;
-    const [pngPath, svgPath] = availablePaths(path.dirname(filePath), name, [".png", ".svg"]);
-    await fs.writeFile(pngPath, png);
-    await fs.writeFile(svgPath, svg);
+    const [pngPath, svgPath] = await saveNewFiles(path.dirname(filePath), name, [
+      { ext: ".png", data: png },
+      { ext: ".svg", data: svg },
+    ]);
 
     await showHUD(`Saved ${path.basename(pngPath)} and ${path.basename(svgPath)}`);
     await open(pngPath);
