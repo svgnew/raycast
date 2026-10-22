@@ -22,7 +22,7 @@ The commands use your SVG.new credits:
 - Convert Image to SVG and Convert Clipboard Image to SVG use 1 credit per image.
 - Remove Background uses 2 credits per image: one to vectorize the image and one to remove the background.
 
-Free accounts get 3 credits a day. Paid plans are listed on the [pricing page](https://svg.new/pricing).
+Free accounts get 1 credit a day. Paid plans are listed on the [pricing page](https://svg.new/pricing).
 
 ## Images
 
